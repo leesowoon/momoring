@@ -41,3 +41,9 @@ def test_orchestrator_allows_safe_input_and_output() -> None:
     result = asyncio.run(orchestrator.respond("오늘 뭐 배울까?"))
     assert result.blocked is False
     assert "안전한 답변" in result.text
+
+
+def test_orchestrator_tts_method_uses_provider() -> None:
+    orchestrator = STSOrchestrator(llm=SafeOutputLLM(), tts=DummyTTS(), safety=SafetyService())
+    audio_url = asyncio.run(orchestrator.tts("session-1", "안녕"))
+    assert audio_url == "/audio/dummy.mp3"
