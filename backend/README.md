@@ -40,6 +40,21 @@ pytest -q
 - `POST /v1/feedback`
 - `WS /v1/sts/stream`
 
+## REST Error Contract
+Handled REST errors use a shared envelope and include the same trace id as the `X-Trace-Id` response header:
+
+```json
+{
+  "error": {
+    "code": "session_not_found",
+    "message": "Session not found.",
+    "trace_id": "..."
+  }
+}
+```
+
+Validation failures use `code: "invalid_payload"` with HTTP 422.
+
 ## WebSocket Event Contract
 Client:
 - `audio_chunk` (`session_id`, `audio_base64`)
@@ -51,11 +66,27 @@ Server order (normal flow):
 3. `bot_text`
 4. `tts_ready`
 
-Server error handling:
-- missing `session_id` -> `{"type":"error","message":"missing session_id"}`
-- unknown event -> `{"type":"error","message":"unknown event"}`
-- malformed payload -> `{"type":"error","message":"malformed payload"}`
-- provider failures -> `stt_failed` / `respond_failed` / `tts_failed`
+Server error handling uses a shared error envelope:
+
+```json
+{
+  "type": "error",
+  "error": {
+    "code": "unknown_event",
+    "message": "Unknown websocket event.",
+    "trace_id": "..."
+  }
+}
+```
+
+Common error codes:
+- `invalid_payload` — missing `session_id` or malformed payload
+- `session_not_found` — unknown session id
+- `unknown_event` — unsupported WebSocket event type
+- `stt_failed` — speech transcription failed
+- `respond_failed` — response generation failed
+- `tts_failed` — speech synthesis failed
+- `internal_error` — unexpected server error
 
 ## Provider Modes
 
@@ -69,13 +100,14 @@ Server error handling:
 - Model env: `OPENAI_STT_MODEL` (default `whisper-1`)
 
 ### TTS (P2)
-- Default: `MockTTSProvider` (stable `/audio/...` URL)
+- Default: `MockTTSProvider` returns a stable placeholder `/audio/...` URL. It is useful for API contract tests, but it does not create a playable audio file.
 - Real mode: `USE_REAL_TTS=true` + `OPENAI_API_KEY`
 - Model/voice env: `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`
 - Output dir env: `AUDIO_OUTPUT_DIR` (default `.data/audio`)
 
-Generated audio is served at `/audio/<filename>.mp3`.
+Generated real-provider audio is served at `/audio/<filename>.mp3`.
 
 ## Notes
 - Keep `.env` and `.data/` out of git.
 - Mock mode is the default and works offline-friendly.
+- Use real TTS mode for browser audio playback verification.
