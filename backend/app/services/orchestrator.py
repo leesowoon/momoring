@@ -12,7 +12,7 @@ class OrchestratedResponse:
 class STSOrchestrator:
     def __init__(self, llm: LLMProvider, tts: TTSProvider, safety: SafetyService) -> None:
         self.llm = llm
-        self.tts = tts
+        self._tts_provider = tts
         self.safety = safety
 
     async def respond(self, user_text: str) -> OrchestratedResponse:
@@ -29,4 +29,4 @@ class STSOrchestrator:
         return OrchestratedResponse(text=text, blocked=False)
 
     async def tts(self, session_id: str, text: str) -> str:
-        return await self.tts.synthesize(session_id, text)
+        return await self._tts_provider.synthesize(session_id, text)
