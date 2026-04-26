@@ -44,3 +44,13 @@ def test_rest_session_not_found_error_shape() -> None:
     assert body["error"]["message"]
     assert body["error"]["trace_id"]
     assert res.headers.get("X-Trace-Id") == body["error"]["trace_id"]
+
+
+def test_rest_validation_error_shape() -> None:
+    res = client.post("/v1/sts/session/start", json={"age_group": "invalid"})
+    assert res.status_code == 422
+    body = res.json()
+    assert body["error"]["code"] == "invalid_payload"
+    assert body["error"]["message"]
+    assert body["error"]["trace_id"]
+    assert res.headers.get("X-Trace-Id") == body["error"]["trace_id"]
