@@ -3,6 +3,7 @@ import logging
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketState
@@ -98,6 +99,16 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     payload = make_error_payload(code=code, trace_id=trace_id)
     logger.error("http_error code=%s trace_id=%s", code, trace_id)
     response = JSONResponse(status_code=exc.status_code, content=payload)
+    response.headers["X-Trace-Id"] = trace_id
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    trace_id = getattr(request.state, "trace_id", str(uuid4()))
+    payload = make_error_payload(code=INVALID_PAYLOAD, trace_id=trace_id)
+    logger.error("validation_error code=%s trace_id=%s errors=%s", INVALID_PAYLOAD, trace_id, exc.errors())
+    response = JSONResponse(status_code=422, content=payload)
     response.headers["X-Trace-Id"] = trace_id
     return response
 
