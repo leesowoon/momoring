@@ -14,10 +14,10 @@ For each unresolved review comment, capture:
 ### Tracking Table
 | Status | Comment | Area | Required patch | Acceptance |
 |---|---|---|---|---|
-| TODO | orchestrator tts shadowing risk | runtime bug | keep provider field separate from method name | `test_orchestrator_tts_method_uses_provider` |
-| TODO | REST/WS error shape mismatch | API contract | enforce `error.code/message/trace_id` shape | `test_rest_session_not_found_error_shape`, WS error tests |
-| TODO | session persistence corruption handling | persistence | backup corrupted JSON + atomic write | session_store corruption tests |
-| TODO | output safety second-pass | safety | verify generated LLM output with safety policy | `test_orchestrator_blocks_unsafe_model_output` |
+| DONE | orchestrator tts shadowing risk | runtime bug | keep provider field separate from method name | `test_orchestrator_tts_method_uses_provider` |
+| DONE | REST/WS error shape mismatch | API contract | enforce `error.code/message/trace_id` shape | `test_rest_session_not_found_error_shape`, WS error tests |
+| DONE | session persistence corruption handling | persistence | backup corrupted JSON + atomic write | session_store corruption tests |
+| DONE | output safety second-pass | safety | verify generated LLM output with safety policy | `test_orchestrator_blocks_unsafe_model_output` |
 
 ## Phase 2 — Patch-by-Comment Workflow
 1. Pick one comment row.
@@ -48,3 +48,10 @@ If dependency/network constraints block full test runs, record exact command + e
   3. `backend/tests/*`
 - Re-run verification gate.
 - Push and confirm PR mergeable state.
+
+
+## Current Gate Result (2026-05-03)
+- `cd backend && pytest -q`: imports are now resolved via pytest config, but the suite does not terminate within the current environment timeout window.
+- `cd backend && timeout 20 pytest -q`: emits test progress dots and exits with code `124` (timeout).
+- `cd backend && python -m compileall app tests`: pass.
+- Next action: run full pytest without external timeout in CI/local and attach complete output to PR before merge.

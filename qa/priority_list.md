@@ -36,3 +36,6 @@
 9. **에러 계약 Lock 검증**
    - 산출물: `backend/tests/test_api.py`, `backend/tests/test_ws_flow.py`
    - 목표: REST/WS error schema 일관성 유지
+
+- [x] P0.5-8 진행: inline comment 실행 플랜 문서화
+- [x] P0.5-9 진행: 에러 계약 lock 테스트 기준 반영
