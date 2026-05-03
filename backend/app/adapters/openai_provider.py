@@ -1,5 +1,6 @@
 import httpx
-from .base import LLMProvider
+
+from .base import LLMMessage, LLMProvider
 
 
 class OpenAILLMProvider(LLMProvider):
@@ -8,21 +9,20 @@ class OpenAILLMProvider(LLMProvider):
         self.model = model
         self.base_url = base_url.rstrip("/")
 
-    async def generate(self, user_text: str) -> str:
+    async def generate(self, messages: list[LLMMessage]) -> str:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
         payload = {
             "model": self.model,
-            "input": [{"role": "user", "content": user_text}],
+            "input": [{"role": m.role, "content": m.content} for m in messages],
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.post(f"{self.base_url}/responses", headers=headers, json=payload)
             res.raise_for_status()
             data = res.json()
 
-        # Responses API output normalization (best-effort)
         if "output_text" in data and data["output_text"]:
             return data["output_text"]
 

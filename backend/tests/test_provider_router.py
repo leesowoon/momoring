@@ -1,6 +1,12 @@
 import asyncio
+
+from app.adapters.base import LLMMessage
 from app.adapters.mock import MockClaudeProvider, MockGPTProvider
 from app.services.provider_router import LLMRouter
+
+
+def _msgs(text: str) -> list[LLMMessage]:
+    return [LLMMessage(role="user", content=text)]
 
 
 def test_router_primary() -> None:
@@ -10,7 +16,7 @@ def test_router_primary() -> None:
         primary=MockGPTProvider(),
         fallback=MockClaudeProvider(),
     )
-    text = asyncio.run(router.generate("안녕"))
+    text = asyncio.run(router.generate(_msgs("안녕")))
     assert text.startswith("[GPT]")
 
 
@@ -22,5 +28,5 @@ def test_router_force_fallback() -> None:
         fallback=MockClaudeProvider(),
         force_fallback=True,
     )
-    text = asyncio.run(router.generate("안녕"))
+    text = asyncio.run(router.generate(_msgs("안녕")))
     assert text.startswith("[Claude]")

@@ -163,10 +163,15 @@ def safety_check(payload: SafetyCheckRequest) -> SafetyCheckResponse:
 
 @app.post("/v1/sts/respond", response_model=RespondResponse)
 async def sts_respond(payload: RespondRequest) -> RespondResponse:
-    if not session_store.get(payload.session_id):
+    session = session_store.get(payload.session_id)
+    if not session:
         raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
 
-    result = await sts_orchestrator.respond(payload.text)
+    result = await sts_orchestrator.respond(
+        payload.text,
+        age_group=session.age_group,
+        history=list(session.turns),
+    )
     session_store.append_turn(payload.session_id, payload.text, result.text, result.blocked)
     return RespondResponse(text=result.text, blocked=result.blocked)
 
@@ -216,7 +221,8 @@ async def sts_stream(websocket: WebSocket) -> None:
                 await send_error(INVALID_PAYLOAD)
                 continue
 
-            if not session_store.get(session_id):
+            session_record = session_store.get(session_id)
+            if not session_record:
                 await send_error(SESSION_NOT_FOUND)
                 continue
 
@@ -234,7 +240,11 @@ async def sts_stream(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "final_transcript", "text": user_text})
 
                 try:
-                    result = await sts_orchestrator.respond(user_text)
+                    result = await sts_orchestrator.respond(
+                        user_text,
+                        age_group=session_record.age_group,
+                        history=list(session_record.turns),
+                    )
                 except Exception:
                     await send_error(RESPOND_FAILED)
                     continue

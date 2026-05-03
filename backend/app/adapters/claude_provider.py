@@ -1,5 +1,8 @@
+from typing import Any
+
 import httpx
-from .base import LLMProvider
+
+from .base import LLMMessage, LLMProvider
 
 
 class ClaudeLLMProvider(LLMProvider):
@@ -8,17 +11,26 @@ class ClaudeLLMProvider(LLMProvider):
         self.model = model
         self.base_url = base_url.rstrip("/")
 
-    async def generate(self, user_text: str) -> str:
+    async def generate(self, messages: list[LLMMessage]) -> str:
+        system_parts = [m.content for m in messages if m.role == "system"]
+        conversation = [
+            {"role": m.role, "content": m.content}
+            for m in messages
+            if m.role in ("user", "assistant")
+        ]
+
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "max_tokens": 200,
-            "messages": [{"role": "user", "content": user_text}],
+            "messages": conversation,
         }
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.post(f"{self.base_url}/messages", headers=headers, json=payload)

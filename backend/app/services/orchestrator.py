@@ -1,6 +1,9 @@
 from dataclasses import dataclass
+
 from ..adapters.base import LLMProvider, TTSProvider
+from .prompt_builder import PromptBuilder
 from .safety import SafetyService
+from .session_store import Turn
 
 
 @dataclass
@@ -10,17 +13,35 @@ class OrchestratedResponse:
 
 
 class STSOrchestrator:
-    def __init__(self, llm: LLMProvider, tts: TTSProvider, safety: SafetyService) -> None:
+    def __init__(
+        self,
+        llm: LLMProvider,
+        tts: TTSProvider,
+        safety: SafetyService,
+        prompt_builder: PromptBuilder | None = None,
+    ) -> None:
         self.llm = llm
         self._tts_provider = tts
         self.safety = safety
+        self.prompt_builder = prompt_builder or PromptBuilder()
 
-    async def respond(self, user_text: str) -> OrchestratedResponse:
+    async def respond(
+        self,
+        user_text: str,
+        *,
+        age_group: str | None = None,
+        history: list[Turn] | None = None,
+    ) -> OrchestratedResponse:
         check = self.safety.check(user_text)
         if not check.safe:
             return OrchestratedResponse(text=self.safety.safe_fallback_response(), blocked=True)
 
-        text = await self.llm.generate(user_text)
+        messages = self.prompt_builder.build(
+            user_text=user_text,
+            age_group=age_group,
+            history=history,
+        )
+        text = await self.llm.generate(messages)
 
         output_check = self.safety.check(text)
         if not output_check.safe:
