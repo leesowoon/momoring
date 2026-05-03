@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from time import perf_counter
 
 from ..adapters.base import LLMProvider, TTSProvider
 from .prompt_builder import PromptBuilder
-from .safety import SafetyService
+from .safety import SafetyCategory, SafetyService
 from .session_store import Turn
 
 
@@ -10,6 +11,9 @@ from .session_store import Turn
 class OrchestratedResponse:
     text: str
     blocked: bool
+    llm_ms: int = 0
+    block_source: str | None = None
+    block_category: SafetyCategory | None = None
 
 
 class STSOrchestrator:
@@ -37,6 +41,8 @@ class STSOrchestrator:
             return OrchestratedResponse(
                 text=self.safety.safe_fallback_response(check.category),
                 blocked=True,
+                block_source="input",
+                block_category=check.category,
             )
 
         messages = self.prompt_builder.build(
@@ -44,16 +50,22 @@ class STSOrchestrator:
             age_group=age_group,
             history=history,
         )
+
+        llm_start = perf_counter()
         text = await self.llm.generate(messages)
+        llm_ms = int((perf_counter() - llm_start) * 1000)
 
         output_check = self.safety.check(text)
         if not output_check.safe:
             return OrchestratedResponse(
                 text=self.safety.safe_fallback_response(output_check.category),
                 blocked=True,
+                llm_ms=llm_ms,
+                block_source="output",
+                block_category=output_check.category,
             )
 
-        return OrchestratedResponse(text=text, blocked=False)
+        return OrchestratedResponse(text=text, blocked=False, llm_ms=llm_ms)
 
     async def tts(self, session_id: str, text: str) -> str:
         return await self._tts_provider.synthesize(session_id, text)
