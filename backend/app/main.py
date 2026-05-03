@@ -1,9 +1,11 @@
-from pathlib import Path
 import logging
+from pathlib import Path
+from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketState
 
@@ -32,11 +34,15 @@ from .schemas import (
     TTSSpeakRequest,
     TTSSpeakResponse,
 )
+from .services import metrics
+from .services.logging_config import configure_logging
 from .services.orchestrator import STSOrchestrator
 from .services.provider_factory import ProviderFactory, ProviderFactoryConfig
 from .services.provider_router import LLMRouter
 from .services.safety import SafetyService
 from .services.session_store import SessionStore
+
+configure_logging()
 
 app = FastAPI(title="Momoring MVP API", version="0.6.0")
 settings = load_settings()
@@ -82,6 +88,17 @@ audio_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/audio", StaticFiles(directory=audio_dir), name="audio")
 
 
+def _log(event: str, level: int = logging.INFO, **fields: Any) -> None:
+    logger.log(level, event, extra={"extra_fields": {"event": event, **fields}})
+
+
+def _record_safety_block(source: str, category_value: str | None) -> None:
+    metrics.safety_block_total.inc(
+        source=source,
+        category=category_value or "unknown",
+    )
+
+
 @app.middleware("http")
 async def trace_id_middleware(request: Request, call_next):
     trace_id = str(uuid4())
@@ -96,7 +113,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     trace_id = getattr(request.state, "trace_id", str(uuid4()))
     code = exc.detail if isinstance(exc.detail, str) else INTERNAL_ERROR
     payload = make_error_payload(code=code, trace_id=trace_id)
-    logger.error("http_error code=%s trace_id=%s", code, trace_id)
+    _log("http_error", level=logging.ERROR, code=code, trace_id=trace_id, status=exc.status_code)
     response = JSONResponse(status_code=exc.status_code, content=payload)
     response.headers["X-Trace-Id"] = trace_id
     return response
@@ -106,7 +123,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 async def unhandled_exception_handler(request: Request, _: Exception) -> JSONResponse:
     trace_id = getattr(request.state, "trace_id", str(uuid4()))
     payload = make_error_payload(code=INTERNAL_ERROR, trace_id=trace_id)
-    logger.exception("internal_error trace_id=%s", trace_id)
+    logger.exception(
+        "internal_error",
+        extra={"extra_fields": {"event": "internal_error", "trace_id": trace_id}},
+    )
     response = JSONResponse(status_code=500, content=payload)
     response.headers["X-Trace-Id"] = trace_id
     return response
@@ -120,6 +140,11 @@ def demo_page() -> dict[str, str]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "llm": llm_router.active_model_label()}
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics_endpoint() -> str:
+    return metrics.registry.render()
 
 
 @app.get("/v1/meta/provider")
@@ -136,10 +161,20 @@ def provider_meta() -> dict[str, str | bool]:
 
 
 @app.post("/v1/sts/session/start", response_model=SessionStartResponse)
-def start_session(payload: SessionStartRequest) -> SessionStartResponse:
+def start_session(payload: SessionStartRequest, request: Request) -> SessionStartResponse:
     session_id = str(uuid4())
     token = str(uuid4())
     session_store.create(session_id=session_id, age_group=payload.age_group)
+
+    metrics.sessions_started_total.inc()
+    metrics.active_sessions.inc()
+    _log(
+        "session_started",
+        trace_id=request.state.trace_id,
+        session_id=session_id,
+        age_group=payload.age_group,
+    )
+
     return SessionStartResponse(
         session_id=session_id,
         ws_url=f"/v1/sts/stream?session_id={session_id}",
@@ -162,23 +197,50 @@ def safety_check(payload: SafetyCheckRequest) -> SafetyCheckResponse:
 
 
 @app.post("/v1/sts/respond", response_model=RespondResponse)
-async def sts_respond(payload: RespondRequest) -> RespondResponse:
+async def sts_respond(payload: RespondRequest, request: Request) -> RespondResponse:
     session = session_store.get(payload.session_id)
     if not session:
         raise HTTPException(status_code=404, detail=SESSION_NOT_FOUND)
 
+    total_start = perf_counter()
     result = await sts_orchestrator.respond(
         payload.text,
         age_group=session.age_group,
         history=list(session.turns),
     )
+    total_ms = int((perf_counter() - total_start) * 1000)
+
     session_store.append_turn(payload.session_id, payload.text, result.text, result.blocked)
+
+    metrics.sts_latency_ms.observe(total_ms)
+    if result.llm_ms:
+        metrics.llm_latency_ms.observe(result.llm_ms)
+    if result.blocked:
+        _record_safety_block(
+            source=result.block_source or "unknown",
+            category_value=result.block_category.value if result.block_category else None,
+        )
+
+    _log(
+        "respond",
+        trace_id=request.state.trace_id,
+        session_id=payload.session_id,
+        age_group=session.age_group,
+        total_ms=total_ms,
+        llm_ms=result.llm_ms,
+        blocked=result.blocked,
+        block_source=result.block_source,
+        block_category=result.block_category.value if result.block_category else None,
+    )
+
     return RespondResponse(text=result.text, blocked=result.blocked)
 
 
 @app.post("/v1/tts/speak", response_model=TTSSpeakResponse)
 async def tts_speak(payload: TTSSpeakRequest) -> TTSSpeakResponse:
+    tts_start = perf_counter()
     audio_url = await sts_orchestrator.tts(payload.session_id, payload.text)
+    metrics.tts_latency_ms.observe(int((perf_counter() - tts_start) * 1000))
     return TTSSpeakResponse(audio_url=audio_url)
 
 
@@ -203,7 +265,7 @@ async def sts_stream(websocket: WebSocket) -> None:
 
     async def send_error(code: str) -> None:
         if websocket.client_state == WebSocketState.CONNECTED:
-            logger.error("ws_error code=%s trace_id=%s", code, ws_trace_id)
+            _log("ws_error", level=logging.ERROR, code=code, trace_id=ws_trace_id)
             await websocket.send_json(make_ws_error_payload(code=code, trace_id=ws_trace_id))
 
     try:
@@ -228,17 +290,22 @@ async def sts_stream(websocket: WebSocket) -> None:
 
             if message_type == "audio_chunk":
                 audio_base64 = payload.get("audio_base64", "")
+                stt_start = perf_counter()
                 try:
                     transcript = await stt_provider.transcribe_chunk(audio_base64)
-                    await websocket.send_json({"type": "partial_transcript", "text": transcript})
                 except Exception:
+                    metrics.sessions_failed_total.inc(stage="stt")
                     await send_error(STT_FAILED)
+                    continue
+                metrics.stt_latency_ms.observe(int((perf_counter() - stt_start) * 1000))
+                await websocket.send_json({"type": "partial_transcript", "text": transcript})
             elif message_type == "end_of_utterance":
                 user_text = payload.get("text", "").strip()
                 if not user_text:
                     user_text = "질문을 이해했어!"
                 await websocket.send_json({"type": "final_transcript", "text": user_text})
 
+                turn_start = perf_counter()
                 try:
                     result = await sts_orchestrator.respond(
                         user_text,
@@ -246,17 +313,49 @@ async def sts_stream(websocket: WebSocket) -> None:
                         history=list(session_record.turns),
                     )
                 except Exception:
+                    metrics.sessions_failed_total.inc(stage="respond")
                     await send_error(RESPOND_FAILED)
                     continue
+
+                if result.llm_ms:
+                    metrics.llm_latency_ms.observe(result.llm_ms)
+                if result.blocked:
+                    _record_safety_block(
+                        source=result.block_source or "unknown",
+                        category_value=result.block_category.value
+                        if result.block_category
+                        else None,
+                    )
 
                 session_store.append_turn(session_id, user_text, result.text, result.blocked)
                 await websocket.send_json({"type": "bot_text", "text": result.text})
 
+                tts_start = perf_counter()
                 try:
                     audio_url = await sts_orchestrator.tts(session_id, result.text)
                 except Exception:
+                    metrics.sessions_failed_total.inc(stage="tts")
                     await send_error(TTS_FAILED)
                     continue
+                tts_ms = int((perf_counter() - tts_start) * 1000)
+                metrics.tts_latency_ms.observe(tts_ms)
+
+                total_ms = int((perf_counter() - turn_start) * 1000)
+                metrics.sts_latency_ms.observe(total_ms)
+                _log(
+                    "ws_turn",
+                    trace_id=ws_trace_id,
+                    session_id=session_id,
+                    age_group=session_record.age_group,
+                    total_ms=total_ms,
+                    llm_ms=result.llm_ms,
+                    tts_ms=tts_ms,
+                    blocked=result.blocked,
+                    block_source=result.block_source,
+                    block_category=result.block_category.value
+                    if result.block_category
+                    else None,
+                )
 
                 await websocket.send_json({"type": "tts_ready", "audio_url": audio_url})
             else:
