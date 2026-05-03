@@ -65,6 +65,10 @@ factory_cfg = ProviderFactoryConfig(
     openai_tts_model=settings.openai_tts_model,
     openai_tts_voice=settings.openai_tts_voice,
     audio_output_dir=settings.audio_output_dir,
+    llm_timeout_s=settings.llm_timeout_s,
+    stt_timeout_s=settings.stt_timeout_s,
+    tts_timeout_s=settings.tts_timeout_s,
+    max_attempts=settings.max_attempts,
 )
 
 llm_router = LLMRouter(
