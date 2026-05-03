@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Character } from "@/features/character/Character";
+import { useLipsync } from "@/features/character/use-lipsync";
 import { useSTSController } from "@/features/sts/use-sts-controller";
 import { useSTSStore } from "@/features/sts/store";
 
@@ -17,6 +18,7 @@ export default function Home() {
 
   const [holding, setHolding] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mouthAmplitude = useLipsync(audioRef);
 
   useEffect(() => {
     if (!ttsAudioUrl) return;
@@ -49,7 +51,7 @@ export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-10">
       <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
-        <Character />
+        <Character mouthAmplitude={mouthAmplitude} />
         <h1 className="text-3xl font-bold tracking-tight">모모링</h1>
 
         {!sessionId ? (

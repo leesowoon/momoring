@@ -27,7 +27,7 @@ const moodByPhase: Record<Phase, string> = {
   error: "from-red-300 to-red-500",
 };
 
-export function Character() {
+export function Character({ mouthAmplitude = 0 }: { mouthAmplitude?: number } = {}) {
   const phase = useSTSStore((s) => s.phase);
 
   return (
@@ -38,7 +38,7 @@ export function Character() {
         aria-label={`모모링 ${phaseLabels[phase]}`}
       >
         <Eyes phase={phase} />
-        <Mouth phase={phase} />
+        <Mouth phase={phase} amplitude={mouthAmplitude} />
         {phase === "thinking" && <ThinkingDots />}
       </div>
       <span className="text-sm text-zinc-500">{phaseLabels[phase]}</span>
@@ -66,24 +66,33 @@ function Eye({ closed }: { closed: boolean }) {
   );
 }
 
-function Mouth({ phase }: { phase: Phase }) {
-  const baseClass =
-    "absolute left-1/2 top-[62%] -translate-x-1/2 rounded-full bg-zinc-900 transition-all";
+function Mouth({ phase, amplitude }: { phase: Phase; amplitude: number }) {
+  const baseClass = "absolute left-1/2 top-[62%] rounded-full bg-zinc-900";
+
+  if (phase === "speaking") {
+    const scaleY = Math.max(0.15, Math.min(1.6, amplitude * 5));
+    return (
+      <span
+        className={`${baseClass} h-3 w-8`}
+        style={{
+          transform: `translateX(-50%) scaleY(${scaleY})`,
+          transformOrigin: "center",
+          transition: "transform 50ms linear",
+        }}
+      />
+    );
+  }
+
+  const stillBase = `${baseClass} -translate-x-1/2 transition-all`;
   switch (phase) {
-    case "speaking":
-      return (
-        <span
-          className={`${baseClass} h-3 w-8 animate-[momoring-speak_320ms_ease-in-out_infinite]`}
-        />
-      );
     case "listening":
-      return <span className={`${baseClass} h-1 w-6`} />;
+      return <span className={`${stillBase} h-1 w-6`} />;
     case "thinking":
-      return <span className={`${baseClass} h-1 w-4 opacity-50`} />;
+      return <span className={`${stillBase} h-1 w-4 opacity-50`} />;
     case "error":
-      return <span className={`${baseClass} h-1.5 w-6 rotate-180`} />;
+      return <span className={`${stillBase} h-1.5 w-6 rotate-180`} />;
     default:
-      return <span className={`${baseClass} h-1.5 w-6`} />;
+      return <span className={`${stillBase} h-1.5 w-6`} />;
   }
 }
 
