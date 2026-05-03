@@ -1,51 +1,81 @@
 # Momoring MVP Backend (FastAPI)
 
-## Run
+## 1) Setup
 ```bash
+cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp ../.env.example .env
+```
+
+## 2) Run
+```bash
+cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Test
+## 3) Test
 ```bash
+cd backend
 pytest -q
 ```
 
-## Current Implementation
-- Adapter 구조(`app/adapters`): STT/LLM/TTS provider interface + mock 구현
-- Service 구조(`app/services`): SafetyService, STSOrchestrator
-- API 레이어(`app/main.py`): REST + WebSocket endpoint
+## 4) Local Demo
+1. Start backend (`uvicorn app.main:app --reload --port 8000`)
+2. Open `http://localhost:8000/static/demo.html`
+3. Click **Start Session**
+4. Click **Connect WebSocket**
+5. Enter text and send with WS or HTTP fallback button
+6. Confirm transcript, bot response, and TTS playback
 
-## Added in Next Step
-- `GET /v1/sts/session/{session_id}`: 세션/턴 조회 (in-memory)
-- `SessionStore`: 세션 생성/턴 기록/조회
+## Implemented Endpoints
+- `GET /health`
+- `GET /v1/meta/provider`
+- `POST /v1/sts/session/start`
+- `GET /v1/sts/session/{session_id}`
+- `POST /v1/sts/respond`
+- `POST /v1/tts/speak`
+- `POST /v1/safety/check`
+- `POST /v1/feedback`
+- `WS /v1/sts/stream`
 
-## Provider Routing (GPT-5.4 / Claude)
-- 기본: GPT-5.4 mock provider
-- fallback: Claude mock provider
-- 환경변수
-  - `LLM_PRIMARY` (default: `gpt-5.4`)
-  - `LLM_FALLBACK` (default: `claude`)
-  - `FORCE_LLM_FALLBACK=true` 로 fallback 강제
-- 확인 API: `GET /v1/meta/provider`
+## WebSocket Event Contract
+Client:
+- `audio_chunk` (`session_id`, `audio_base64`)
+- `end_of_utterance` (`session_id`, `text` optional)
 
-## Session Persistence
-- 기본 경로: `.data/sessions.json`
-- 환경변수 `SESSION_STORE_PATH`로 저장 경로 변경 가능
+Server order (normal flow):
+1. `partial_transcript`
+2. `final_transcript`
+3. `bot_text`
+4. `tts_ready`
 
-## Real Provider Mode (Optional)
-- `USE_REAL_PROVIDERS=true` 설정 시 API key가 있으면 실 provider adapter 사용
-- OpenAI
-  - `OPENAI_API_KEY`
-  - `OPENAI_MODEL` (default: `gpt-5.4`)
-  - `OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
-- Anthropic
-  - `ANTHROPIC_API_KEY`
-  - `ANTHROPIC_MODEL` (default: `claude-sonnet-4`)
-  - `ANTHROPIC_BASE_URL` (default: `https://api.anthropic.com/v1`)
+Server error handling:
+- missing `session_id` -> `{"type":"error","message":"missing session_id"}`
+- unknown event -> `{"type":"error","message":"unknown event"}`
+- malformed payload -> `{"type":"error","message":"malformed payload"}`
+- provider failures -> `stt_failed` / `respond_failed` / `tts_failed`
 
-## WebSocket Test Coverage
-- `backend/tests/test_ws_flow.py` 에서 `audio_chunk`, `end_of_utterance`, `unknown` 이벤트 계약 검증
+## Provider Modes
 
+### LLM (existing)
+- Default: mock GPT + mock Claude fallback
+- Real mode: `USE_REAL_PROVIDERS=true` with API keys
+
+### STT (P1)
+- Default: `MockSTTProvider`
+- Real mode: `USE_REAL_STT=true` + `OPENAI_API_KEY`
+- Model env: `OPENAI_STT_MODEL` (default `whisper-1`)
+
+### TTS (P2)
+- Default: `MockTTSProvider` (stable `/audio/...` URL)
+- Real mode: `USE_REAL_TTS=true` + `OPENAI_API_KEY`
+- Model/voice env: `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE`
+- Output dir env: `AUDIO_OUTPUT_DIR` (default `.data/audio`)
+
+Generated audio is served at `/audio/<filename>.mp3`.
+
+## Notes
+- Keep `.env` and `.data/` out of git.
+- Mock mode is the default and works offline-friendly.
