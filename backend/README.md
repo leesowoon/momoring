@@ -9,6 +9,12 @@ pip install -r requirements.txt
 cp ../.env.example .env
 ```
 
+For local development including lint/typecheck/pre-commit:
+```bash
+pip install -r requirements-dev.txt
+pre-commit install   # run from repo root
+```
+
 ## 2) Run
 ```bash
 cd backend
@@ -20,6 +26,15 @@ uvicorn app.main:app --reload --port 8000
 cd backend
 pytest -q
 ```
+
+## 3a) Lint / Typecheck
+```bash
+cd backend
+ruff check .
+ruff format --check .
+mypy
+```
+Pre-commit runs ruff + mypy automatically on staged files; CI runs all three.
 
 ## 4) Local Demo
 1. Start backend (`uvicorn app.main:app --reload --port 8000`)
