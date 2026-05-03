@@ -34,7 +34,10 @@ class STSOrchestrator:
     ) -> OrchestratedResponse:
         check = self.safety.check(user_text)
         if not check.safe:
-            return OrchestratedResponse(text=self.safety.safe_fallback_response(), blocked=True)
+            return OrchestratedResponse(
+                text=self.safety.safe_fallback_response(check.category),
+                blocked=True,
+            )
 
         messages = self.prompt_builder.build(
             user_text=user_text,
@@ -45,7 +48,10 @@ class STSOrchestrator:
 
         output_check = self.safety.check(text)
         if not output_check.safe:
-            return OrchestratedResponse(text=self.safety.safe_fallback_response(), blocked=True)
+            return OrchestratedResponse(
+                text=self.safety.safe_fallback_response(output_check.category),
+                blocked=True,
+            )
 
         return OrchestratedResponse(text=text, blocked=False)
 
