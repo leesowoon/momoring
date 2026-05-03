@@ -1,4 +1,14 @@
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol
+
+
+MessageRole = Literal["system", "user", "assistant"]
+
+
+@dataclass(frozen=True)
+class LLMMessage:
+    role: MessageRole
+    content: str
 
 
 class STTProvider(Protocol):
@@ -6,7 +16,7 @@ class STTProvider(Protocol):
 
 
 class LLMProvider(Protocol):
-    async def generate(self, user_text: str) -> str: ...
+    async def generate(self, messages: list[LLMMessage]) -> str: ...
 
 
 class TTSProvider(Protocol):

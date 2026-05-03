@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from ..adapters.base import LLMProvider
+
+from ..adapters.base import LLMMessage, LLMProvider
 
 
 @dataclass
@@ -10,14 +11,14 @@ class LLMRouter:
     fallback: LLMProvider
     force_fallback: bool = False
 
-    async def generate(self, user_text: str) -> str:
+    async def generate(self, messages: list[LLMMessage]) -> str:
         if self.force_fallback:
-            return await self.fallback.generate(user_text)
+            return await self.fallback.generate(messages)
 
         try:
-            return await self.primary.generate(user_text)
+            return await self.primary.generate(messages)
         except Exception:
-            return await self.fallback.generate(user_text)
+            return await self.fallback.generate(messages)
 
     def active_model_label(self) -> str:
         if self.force_fallback:
