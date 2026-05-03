@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+@theme {
+  --animate-momoring-shake: momoring-shake 0.4s ease-in-out;
+  --animate-momoring-speak: momoring-speak 320ms ease-in-out;
+}
+
+@keyframes momoring-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+@keyframes momoring-speak {
+  0%, 100% { transform: translateX(-50%) scaleY(1); }
+  50% { transform: translateX(-50%) scaleY(0.4); }
+}

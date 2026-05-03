@@ -2,17 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Character } from "@/features/character/Character";
 import { useSTSController } from "@/features/sts/use-sts-controller";
 import { useSTSStore } from "@/features/sts/store";
 
 export default function Home() {
   const controller = useSTSController();
-  const phase = useSTSStore((s) => s.phase);
   const sessionId = useSTSStore((s) => s.sessionId);
   const messages = useSTSStore((s) => s.messages);
   const partial = useSTSStore((s) => s.partialTranscript);
   const ttsAudioUrl = useSTSStore((s) => s.ttsAudioUrl);
   const errorMessage = useSTSStore((s) => s.errorMessage);
+  const setPhase = useSTSStore((s) => s.setPhase);
 
   const [holding, setHolding] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -24,6 +25,14 @@ export default function Home() {
     audio.src = ttsAudioUrl;
     audio.play().catch(() => {});
   }, [ttsAudioUrl]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onEnded = () => setPhase("idle");
+    audio.addEventListener("ended", onEnded);
+    return () => audio.removeEventListener("ended", onEnded);
+  }, [setPhase]);
 
   const onPressStart = async () => {
     if (!sessionId) return;
@@ -40,9 +49,8 @@ export default function Home() {
   return (
     <main className="flex flex-1 flex-col items-center px-6 py-10">
       <div className="flex w-full max-w-md flex-col items-center gap-6 text-center">
-        <div className="size-32 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 shadow-lg" />
+        <Character />
         <h1 className="text-3xl font-bold tracking-tight">모모링</h1>
-        <p className="text-sm text-zinc-500">상태: {phase}</p>
 
         {!sessionId ? (
           <button
