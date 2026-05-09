@@ -40,6 +40,7 @@ from .services.orchestrator import STSOrchestrator
 from .services.provider_factory import ProviderFactory, ProviderFactoryConfig
 from .services.provider_router import LLMRouter
 from .services.safety import SafetyService
+from .services.session_runtime import SessionRuntimeStore
 from .services.session_store import SessionStore
 
 configure_logging()
@@ -50,6 +51,7 @@ logger = logging.getLogger("momoring.api")
 
 safety_service = SafetyService()
 session_store = SessionStore(persist_path=settings.session_store_path)
+session_runtime = SessionRuntimeStore()
 
 factory_cfg = ProviderFactoryConfig(
     use_real_providers=settings.use_real_providers,
@@ -293,6 +295,23 @@ async def sts_stream(websocket: WebSocket) -> None:
                 continue
 
             if message_type == "audio_chunk":
+                seq = payload.get("seq")
+                if isinstance(seq, int) and not session_runtime.accept_seq(session_id, seq):
+                    _log(
+                        "ws_chunk_dropped",
+                        trace_id=ws_trace_id,
+                        session_id=session_id,
+                        seq=seq,
+                        reason="duplicate_or_out_of_order",
+                    )
+                    continue
+
+                if session_runtime.get_phase(session_id) == "speaking":
+                    await websocket.send_json({"type": "barge_in"})
+                    _log("ws_barge_in", trace_id=ws_trace_id, session_id=session_id)
+
+                session_runtime.set_phase(session_id, "listening")
+
                 audio_base64 = payload.get("audio_base64", "")
                 stt_start = perf_counter()
                 try:
@@ -303,7 +322,19 @@ async def sts_stream(websocket: WebSocket) -> None:
                     continue
                 metrics.stt_latency_ms.observe(int((perf_counter() - stt_start) * 1000))
                 await websocket.send_json({"type": "partial_transcript", "text": transcript})
+            elif message_type == "resume":
+                last_seq = payload.get("last_seq")
+                if isinstance(last_seq, int):
+                    session_runtime.fast_forward_seq(session_id, last_seq)
+                await websocket.send_json(
+                    {
+                        "type": "resumed",
+                        "last_seq": session_runtime.get_last_seq(session_id),
+                        "phase": session_runtime.get_phase(session_id),
+                    }
+                )
             elif message_type == "end_of_utterance":
+                session_runtime.set_phase(session_id, "thinking")
                 user_text = payload.get("text", "").strip()
                 if not user_text:
                     user_text = "질문을 이해했어!"
@@ -361,6 +392,7 @@ async def sts_stream(websocket: WebSocket) -> None:
                     else None,
                 )
 
+                session_runtime.set_phase(session_id, "speaking")
                 await websocket.send_json({"type": "tts_ready", "audio_url": audio_url})
             else:
                 await send_error(UNKNOWN_EVENT)
