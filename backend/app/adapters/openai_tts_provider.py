@@ -33,7 +33,7 @@ class OpenAITTSProvider(TTSProvider):
             "model": self.model,
             "voice": self.voice,
             "input": text,
-            "format": "mp3",
+            "response_format": "mp3",
         }
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:

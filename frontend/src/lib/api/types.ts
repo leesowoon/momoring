@@ -66,8 +66,14 @@ export class ApiError extends Error {
 }
 
 export type WSClientMessage =
-  | { type: "audio_chunk"; session_id: string; audio_base64: string }
-  | { type: "end_of_utterance"; session_id: string; text?: string };
+  | { type: "audio_chunk"; session_id: string; audio_base64: string; seq?: number }
+  | {
+      type: "end_of_utterance";
+      session_id: string;
+      text?: string;
+      audio_base64?: string;
+    }
+  | { type: "resume"; session_id: string; last_seq: number };
 
 export type WSServerMessage =
   | { type: "partial_transcript"; text: string }

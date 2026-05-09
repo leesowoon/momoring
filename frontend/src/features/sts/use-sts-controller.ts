@@ -13,7 +13,7 @@ import { useSTSStore } from "./store";
 export interface UseSTSController {
   start: (ageGroup: AgeGroup) => Promise<void>;
   beginUtterance: () => Promise<void>;
-  endUtterance: () => void;
+  endUtterance: () => Promise<void>;
   stop: () => void;
 }
 
@@ -31,7 +31,7 @@ export function useSTSController(): UseSTSController {
   const reset = useSTSStore((s) => s.reset);
 
   const stop = useCallback(() => {
-    captureRef.current?.stop();
+    captureRef.current?.stopAndCollect();
     captureRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
@@ -103,28 +103,29 @@ export function useSTSController(): UseSTSController {
 
     setPhase("listening");
     const capture = new AudioCapture({
-      onChunk: (audio_base64) => {
-        try {
-          ws.send({ type: "audio_chunk", session_id: sessionId, audio_base64 });
-        } catch {
-          /* ws not open yet — drop chunk */
-        }
-      },
       onError: (err) => setError(`mic_error: ${err.message}`),
     });
     captureRef.current = capture;
     await capture.start();
   }, [setError, setPhase]);
 
-  const endUtterance = useCallback(() => {
+  const endUtterance = useCallback(async () => {
     const ws = wsRef.current;
     const sessionId = useSTSStore.getState().sessionId;
-    captureRef.current?.stop();
-    captureRef.current = null;
+
+    let audio_base64 = "";
+    if (captureRef.current) {
+      audio_base64 = await captureRef.current.stopAndCollect();
+      captureRef.current = null;
+    }
 
     if (ws && sessionId) {
       try {
-        ws.send({ type: "end_of_utterance", session_id: sessionId });
+        ws.send({
+          type: "end_of_utterance",
+          session_id: sessionId,
+          audio_base64: audio_base64 || undefined,
+        });
       } catch {
         /* ignore */
       }

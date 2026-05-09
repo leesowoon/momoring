@@ -274,6 +274,8 @@ async def sts_stream(websocket: WebSocket) -> None:
             _log("ws_error", level=logging.ERROR, code=code, trace_id=ws_trace_id)
             await websocket.send_json(make_ws_error_payload(code=code, trace_id=ws_trace_id))
 
+    transcript_parts: list[str] = []
+
     try:
         while True:
             try:
@@ -309,6 +311,7 @@ async def sts_stream(websocket: WebSocket) -> None:
                 if session_runtime.get_phase(session_id) == "speaking":
                     await websocket.send_json({"type": "barge_in"})
                     _log("ws_barge_in", trace_id=ws_trace_id, session_id=session_id)
+                    transcript_parts.clear()
 
                 session_runtime.set_phase(session_id, "listening")
 
@@ -321,6 +324,8 @@ async def sts_stream(websocket: WebSocket) -> None:
                     await send_error(STT_FAILED)
                     continue
                 metrics.stt_latency_ms.observe(int((perf_counter() - stt_start) * 1000))
+                if transcript:
+                    transcript_parts.append(transcript)
                 await websocket.send_json({"type": "partial_transcript", "text": transcript})
             elif message_type == "resume":
                 last_seq = payload.get("last_seq")
@@ -336,8 +341,25 @@ async def sts_stream(websocket: WebSocket) -> None:
             elif message_type == "end_of_utterance":
                 session_runtime.set_phase(session_id, "thinking")
                 user_text = payload.get("text", "").strip()
+                audio_base64 = payload.get("audio_base64", "")
+
+                if not user_text and audio_base64:
+                    stt_start = perf_counter()
+                    try:
+                        user_text = (
+                            await stt_provider.transcribe_chunk(audio_base64)
+                        ).strip()
+                    except Exception:
+                        metrics.sessions_failed_total.inc(stage="stt")
+                        await send_error(STT_FAILED)
+                        continue
+                    metrics.stt_latency_ms.observe(
+                        int((perf_counter() - stt_start) * 1000)
+                    )
+
                 if not user_text:
-                    user_text = "질문을 이해했어!"
+                    user_text = " ".join(transcript_parts).strip() or "질문을 이해했어!"
+                transcript_parts.clear()
                 await websocket.send_json({"type": "final_transcript", "text": user_text})
 
                 turn_start = perf_counter()
