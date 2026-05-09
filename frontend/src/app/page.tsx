@@ -4,14 +4,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { Character } from "@/features/character/Character";
 import { useLipsync } from "@/features/character/use-lipsync";
+import { ChatLog } from "@/features/chat/ChatLog";
 import { useSTSController } from "@/features/sts/use-sts-controller";
 import { useSTSStore } from "@/features/sts/store";
 
 export default function Home() {
   const controller = useSTSController();
   const sessionId = useSTSStore((s) => s.sessionId);
-  const messages = useSTSStore((s) => s.messages);
-  const partial = useSTSStore((s) => s.partialTranscript);
   const ttsAudioUrl = useSTSStore((s) => s.ttsAudioUrl);
   const errorMessage = useSTSStore((s) => s.errorMessage);
   const setPhase = useSTSStore((s) => s.setPhase);
@@ -82,30 +81,7 @@ export default function Home() {
           <p className="text-sm text-red-500">⚠️ {errorMessage}</p>
         )}
 
-        <div className="w-full text-left">
-          {partial && (
-            <p className="mb-2 text-sm italic text-zinc-400">{partial}</p>
-          )}
-          <ul className="space-y-2">
-            {messages.map((m, i) => (
-              <li
-                key={i}
-                className={`rounded-lg px-3 py-2 text-sm ${
-                  m.role === "user"
-                    ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
-                    : m.blocked
-                      ? "bg-amber-100 text-amber-900"
-                      : "bg-purple-100 text-purple-900"
-                }`}
-              >
-                <span className="mr-2 text-xs font-semibold opacity-60">
-                  {m.role === "user" ? "나" : "모모링"}
-                </span>
-                {m.text}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ChatLog />
 
         <audio ref={audioRef} hidden />
       </div>
