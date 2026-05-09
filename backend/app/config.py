@@ -27,6 +27,11 @@ class Settings:
     openai_tts_voice: str = "alloy"
     audio_output_dir: str = ".data/audio"
 
+    llm_timeout_s: float = 6.0
+    stt_timeout_s: float = 4.0
+    tts_timeout_s: float = 4.0
+    max_attempts: int = 2
+
 
 def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
@@ -54,4 +59,8 @@ def load_settings() -> Settings:
         openai_tts_model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
         openai_tts_voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
         audio_output_dir=os.getenv("AUDIO_OUTPUT_DIR", ".data/audio"),
+        llm_timeout_s=float(os.getenv("LLM_TIMEOUT_S", "6.0")),
+        stt_timeout_s=float(os.getenv("STT_TIMEOUT_S", "4.0")),
+        tts_timeout_s=float(os.getenv("TTS_TIMEOUT_S", "4.0")),
+        max_attempts=int(os.getenv("PROVIDER_MAX_ATTEMPTS", "2")),
     )
