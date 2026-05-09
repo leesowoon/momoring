@@ -23,16 +23,41 @@ class OpenAILLMProvider(LLMProvider):
             res.raise_for_status()
             data = res.json()
 
-        if "output_text" in data and data["output_text"]:
-            return data["output_text"]
-
-        output = data.get("output", [])
-        if output and isinstance(output, list):
-            first = output[0]
-            content = first.get("content", [])
-            if content and isinstance(content, list):
-                text = content[0].get("text")
-                if text:
-                    return text
+        text = _extract_text(data)
+        if text:
+            return text
 
         return "모모링: 지금은 간단히 설명해줄게!"
+
+
+def _extract_text(data: dict) -> str | None:
+    """Walk a Responses API payload looking for the assistant's text.
+
+    GPT-5 family responses can include a leading reasoning item before the
+    actual message item, so we can't rely on output[0]. Iterate every
+    item, skip non-message types, then pull the first text content.
+    """
+    output_text = data.get("output_text")
+    if isinstance(output_text, str) and output_text:
+        return output_text
+
+    output = data.get("output")
+    if not isinstance(output, list):
+        return None
+
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "message":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for c in content:
+            if not isinstance(c, dict):
+                continue
+            text = c.get("text")
+            if isinstance(text, str) and text:
+                return text
+
+    return None

@@ -1,34 +1,31 @@
 export interface AudioCaptureCallbacks {
-  onChunk: (base64: string) => void;
   onError?: (err: Error) => void;
 }
-
-const CHUNK_INTERVAL_MS = 500;
 
 export class AudioCapture {
   private mediaRecorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
+  private chunks: Blob[] = [];
+  private mimeType: string = "audio/webm";
 
-  constructor(private readonly callbacks: AudioCaptureCallbacks) {}
+  constructor(private readonly callbacks: AudioCaptureCallbacks = {}) {}
 
   async start(): Promise<void> {
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(this.stream, { mimeType: pickMimeType() });
+      this.mimeType = pickMimeType();
+      const recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType });
+      this.chunks = [];
 
       recorder.ondataavailable = (event) => {
-        if (event.data.size === 0) return;
-        event.data
-          .arrayBuffer()
-          .then((buf) => this.callbacks.onChunk(arrayBufferToBase64(buf)))
-          .catch((err) => this.callbacks.onError?.(err as Error));
+        if (event.data.size > 0) this.chunks.push(event.data);
       };
 
       recorder.onerror = () => {
         this.callbacks.onError?.(new Error("media_recorder_error"));
       };
 
-      recorder.start(CHUNK_INTERVAL_MS);
+      recorder.start();
       this.mediaRecorder = recorder;
     } catch (err) {
       this.callbacks.onError?.(err as Error);
@@ -36,11 +33,34 @@ export class AudioCapture {
     }
   }
 
-  stop(): void {
-    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
-      this.mediaRecorder.stop();
-    }
-    this.cleanup();
+  /** Stop recording and resolve the full utterance as base64. */
+  stopAndCollect(): Promise<string> {
+    return new Promise((resolve) => {
+      const recorder = this.mediaRecorder;
+      if (!recorder) {
+        resolve("");
+        return;
+      }
+
+      recorder.onstop = async () => {
+        try {
+          const blob = new Blob(this.chunks, { type: this.mimeType });
+          const buffer = await blob.arrayBuffer();
+          resolve(arrayBufferToBase64(buffer));
+        } catch {
+          resolve("");
+        } finally {
+          this.cleanup();
+        }
+      };
+
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      } else {
+        this.cleanup();
+        resolve("");
+      }
+    });
   }
 
   isRecording(): boolean {
@@ -51,6 +71,7 @@ export class AudioCapture {
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     this.mediaRecorder = null;
+    this.chunks = [];
   }
 }
 

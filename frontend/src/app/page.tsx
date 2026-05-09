@@ -44,7 +44,7 @@ export default function Home() {
   const onPressEnd = () => {
     if (!holding) return;
     setHolding(false);
-    controller.endUtterance();
+    void controller.endUtterance();
   };
 
   return (
